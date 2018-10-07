@@ -1,0 +1,164 @@
+---
+title: "Practical Machine Learning Course Project"
+author: "Amit kumar"
+date: "October 7, 2018"
+output: html_document
+---
+
+## Overview
+Practical Machine Learning Coursera's course project as part of the specialization in Data science. It is built up in Rstudio, using knitr function. The Goal of project is to predict the manner in which 6 participants performed excercise. Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. Project goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways.
+
+## Setting Environment and Loading data
+Uploading the R libraries that are necessary for the analysis.
+```{r}
+library(knitr)
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(rattle)
+library(randomForest)
+library(corrplot)
+
+set.seed(12345)
+```
+
+## Getting and cleaning Data
+The next step is loading the dataset from the Given URL. 
+``` {r}
+# setting the URL for the download
+TrainUrl <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+TestUrl  <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+
+# downloadng the datasets
+training <- read.csv(url(TrainUrl))
+testing  <- read.csv(url(TestUrl))
+
+# create a partition with the training dataset 
+inTrain  <- createDataPartition(training$classe, p=0.7, list=FALSE)
+TrainSet <- training[inTrain, ]
+TestSet  <- training[-inTrain, ]
+dim(TrainSet)
+dim(TestSet)
+```
+Both datasets have plenty of NA values, that we will remove. 
+``` {r}
+# removeing  variables with Nearly Zero Variance
+Nearzero <- nearZeroVar(TrainSet)
+TrainSet <- TrainSet[, -Nearzero]
+TestSet  <- TestSet[, -Nearzero]
+dim(TrainSet)
+dim(TestSet)
+```
+
+```{r}
+# removing variables that are mostly NA
+NAval    <- sapply(TrainSet, function(x) mean(is.na(x))) > 0.95
+TrainSet <- TrainSet[, NAval==FALSE]
+TestSet  <- TestSet[, NAval==FALSE]
+dim(TrainSet)
+dim(TestSet)
+```
+
+```{r}
+# removeing identification variables (columns 1 to 5)
+TrainSet <- TrainSet[, -(1:5)]
+TestSet  <- TestSet[, -(1:5)]
+dim(TrainSet)
+dim(TestSet)
+```
+After cleaning process we have 54  variables.
+
+## Correlation Analysis
+```{r}
+corAnalysis <- cor(TrainSet[, -54])
+corrplot(corAnalysis, order = "FPC", method = "color", type = "lower", 
+         tl.cex = 0.8, tl.col = rgb(0, 0, 0))
+```
+
+The highly correlated variables are in dark colors in graph. 
+
+## Building Prediction Models. 
+Three methods will be applied to model the regression in the train data set and the best one with higher accuracy when applied to the Test dataset) will be used for prediction 
+The methods are: (i) Random Forest (ii) Decision Tree (iii) Generalized Boosted model. 
+
+## (i) Method: Random Forest
+```{r}
+# model fit
+set.seed(12345)
+controlRF <- trainControl(method="cv", number=3, verboseIter=FALSE)
+modFitRandForest <- train(classe ~ ., data=TrainSet, method="rf",
+                          trControl=controlRF)
+modFitRandForest$finalModel
+```
+
+```{r}
+
+# prediction on Test dataset
+predictRandForest <- predict(modFitRandForest, newdata=TestSet)
+confMatRandForest <- confusionMatrix(predictRandForest, TestSet$classe)
+confMatRandForest
+```
+
+```{r}
+# plot matrix results
+plot(confMatRandForest$table, col = confMatRandForest$byClass, 
+     main = paste("Random Forest - Accuracy =",
+                  round(confMatRandForest$overall['Accuracy'], 4)))
+```
+
+## (ii) Method: Decision Tree
+```{r}
+# model fit
+set.seed(12345)
+modFitDecTree <- rpart(classe ~ ., data=TrainSet, method="class")
+fancyRpartPlot(modFitDecTree)
+```
+
+```{r}
+# prediction on Test dataset
+predictDecTree <- predict(modFitDecTree, newdata=TestSet, type="class")
+confMatDecTree <- confusionMatrix(predictDecTree, TestSet$classe)
+confMatDecTree
+```
+
+```{r}
+# plot matrix results
+plot(confMatDecTree$table, col = confMatDecTree$byClass, 
+     main = paste("Decision Tree - Accuracy =",
+                  round(confMatDecTree$overall['Accuracy'], 4)))
+```
+
+##(iii) Method: Generalized Boosted Model
+```{r}
+# model fit
+set.seed(12345)
+controlGBM <- trainControl(method = "repeatedcv", number = 5, repeats = 1)
+modFitGBM  <- train(classe ~ ., data=TrainSet, method = "gbm",
+                    trControl = controlGBM, verbose = FALSE)
+modFitGBM$finalModel
+```
+
+```{r}
+# prediction on Test dataset
+predictGBM <- predict(modFitGBM, newdata=TestSet)
+confMatGBM <- confusionMatrix(predictGBM, TestSet$classe)
+confMatGBM
+```
+
+```{r}
+# plot matrix results
+plot(confMatGBM$table, col = confMatGBM$byClass, 
+     main = paste("GBM - Accuracy =", round(confMatGBM$overall['Accuracy'], 4)))
+```
+
+## Applying the best accuracy Model to the the Test Data
+The accuracy of the 3 regression modeling methods above are:
+(i) Random Forest : 0.9963
+(ii) Decision Tree : 0.7368
+(iii) GBM : 0.9839
+The Random Forest Model have the highest accuracy hence it will be applied to predict the Test dataset. 
+
+```{r}
+predictTEST <- predict(modFitRandForest, newdata=testing)
+predictTEST
+```
